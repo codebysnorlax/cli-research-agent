@@ -428,6 +428,20 @@ async function saveToNotion(state) {
   setStatus("Parsing Markdown to Notion structured blocks...");
   const blocks = markdownToNotionBlocks(state.notes);
 
+  // Extract the first heading_1 as the Notion Page Title
+  let pageTitle = state.topic; // Fallback to raw input
+  const firstH1Index = blocks.findIndex((b) => b.type === "heading_1");
+  if (firstH1Index !== -1) {
+    const h1Block = blocks[firstH1Index];
+    // Extract text from the rich_text array
+    pageTitle = h1Block.heading_1.rich_text
+      .map((t) => t.text.content)
+      .join("");
+    
+    // Remove the h1 block from the body so it's not duplicated below the title
+    blocks.splice(firstH1Index, 1);
+  }
+
   setStatus("Saving page to Notion...");
   const initialChildren = blocks.slice(0, 100);
 
@@ -441,7 +455,7 @@ async function saveToNotion(state) {
     body: JSON.stringify({
       parent: { page_id: process.env.NOTION_PAGE_ID },
       properties: {
-        title: { title: [{ text: { content: state.topic } }] },
+        title: { title: [{ text: { content: pageTitle } }] },
       },
       children: initialChildren,
     }),
