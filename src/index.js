@@ -74,7 +74,7 @@ function buildAgent(provider, modelId) {
  * Stream a response from the given agent, writing tokens to stdout.
  * Returns true if output was produced, false otherwise.
  */
-async function streamResponse(agent, question, spinner) {
+async function streamResponse(agent, question, spinner, agentLabel) {
   let started = false;
 
   const result = await agent.stream(
@@ -89,7 +89,7 @@ async function streamResponse(agent, question, spinner) {
 
     if (!started) {
       clearInterval(spinner);
-      process.stdout.write("\r\x1b[KAgent: ");
+      process.stdout.write(`\r\x1b[K${c.bold}${c.cyan}${agentLabel}:${c.reset} `);
       started = true;
     }
     process.stdout.write(content);
@@ -157,7 +157,8 @@ while (true) {
   let spinner = setInterval(() => {
     const elapsed = formatTimer(Date.now() - startTime);
     const frame = spinnerFrames[frameIdx % spinnerFrames.length];
-    const dots = ".".repeat(1 + (frameIdx % 3));
+    // Slower dots: change every 5 frames (~400ms)
+    const dots = ".".repeat(1 + (Math.floor(frameIdx / 5) % 3));
     process.stdout.write(
       `\r\x1b[K${c.cyan}${frame} [${elapsed}] Thinking${dots}${c.reset}`
     );
@@ -167,7 +168,7 @@ while (true) {
   let responded = false;
 
   try {
-    responded = await streamResponse(primaryAgent, question, spinner);
+    responded = await streamResponse(primaryAgent, question, spinner, activeLabel);
   } catch (err) {
     clearInterval(spinner);
     process.stdout.write("\r\x1b[K");
@@ -193,14 +194,15 @@ while (true) {
           spinner = setInterval(() => {
             const elapsed = formatTimer(Date.now() - startTime);
             const frame = spinnerFrames[frameIdx % spinnerFrames.length];
-            const dots = ".".repeat(1 + (frameIdx % 3));
+            // Slower dots: change every 5 frames (~400ms)
+            const dots = ".".repeat(1 + (Math.floor(frameIdx / 5) % 3));
             process.stdout.write(
               `\r\x1b[K${c.cyan}${frame} [${elapsed}] Thinking (${fallbackLabel})${dots}${c.reset}`
             );
             frameIdx++;
           }, 80);
 
-          responded = await streamResponse(fallbackAgent, question, spinner);
+          responded = await streamResponse(fallbackAgent, question, spinner, fallbackLabel);
 
           if (responded) {
             // Promote this fallback as the new primary for the session
