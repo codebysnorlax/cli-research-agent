@@ -156,9 +156,12 @@ while (true) {
   let startTime = Date.now();
   let spinner = setInterval(() => {
     const elapsed = formatTimer(Date.now() - startTime);
+    const frame = spinnerFrames[frameIdx % spinnerFrames.length];
+    const dots = ".".repeat(1 + (frameIdx % 3));
     process.stdout.write(
-      `\r${spinnerFrames[frameIdx++ % spinnerFrames.length]} [${elapsed}] Thinking...`,
+      `\r\x1b[K${c.cyan}${frame} [${elapsed}] Thinking${dots}${c.reset}`
     );
+    frameIdx++;
   }, 80);
 
   let responded = false;
@@ -189,9 +192,12 @@ while (true) {
           startTime = Date.now();
           spinner = setInterval(() => {
             const elapsed = formatTimer(Date.now() - startTime);
+            const frame = spinnerFrames[frameIdx % spinnerFrames.length];
+            const dots = ".".repeat(1 + (frameIdx % 3));
             process.stdout.write(
-              `\r${spinnerFrames[frameIdx++ % spinnerFrames.length]} [${elapsed}] Thinking (${fallbackLabel})...`,
+              `\r\x1b[K${c.cyan}${frame} [${elapsed}] Thinking (${fallbackLabel})${dots}${c.reset}`
             );
+            frameIdx++;
           }, 80);
 
           responded = await streamResponse(fallbackAgent, question, spinner);
