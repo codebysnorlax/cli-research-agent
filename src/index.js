@@ -91,7 +91,9 @@ function getCleanModelName(providerKey, modelId) {
 async function streamResponse(agent, question, spinner, agentLabel, chatState) {
   let started = false;
   const controller = new AbortController();
-  let timeoutId = setTimeout(() => controller.abort(new Error("Timeout: Model took too long to respond.")), 15000);
+  
+  // Allow 60s initially for the model to think or establish a connection
+  let timeoutId = setTimeout(() => controller.abort(new Error("Timeout: Model took too long to start.")), 60000);
 
   try {
     const result = await agent.stream(
@@ -100,17 +102,22 @@ async function streamResponse(agent, question, spinner, agentLabel, chatState) {
     );
 
     for await (const [token] of result) {
-      // Reset timeout on every token
       clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => controller.abort(new Error("Timeout: Stream stalled.")), 15000);
+
+      // If the AI is calling tools, give it another 60s to process the tool results
+      if (token.tool_calls && token.tool_calls.length > 0) {
+        if (chatState) {
+          const tool = token.tool_calls[0].name;
+          if (tool === "web_search") chatState.text = "Searching on web";
+          if (tool === "visit_page") chatState.text = "Reading webpage";
+        }
+        timeoutId = setTimeout(() => controller.abort(new Error("Timeout: Tool execution stalled.")), 60000);
+      } else {
+        // Once standard text starts streaming, a 15s stall is a dropped connection
+        timeoutId = setTimeout(() => controller.abort(new Error("Timeout: Stream stalled.")), 15000);
+      }
 
       if (token.type !== "ai") continue;
-
-      if (token.tool_calls && token.tool_calls.length > 0 && chatState) {
-        const tool = token.tool_calls[0].name;
-        if (tool === "web_search") chatState.text = "Searching on web";
-        if (tool === "visit_page") chatState.text = "Reading webpage";
-      }
 
       const content = typeof token.content === "string" ? token.content : "";
       if (!content) continue;
