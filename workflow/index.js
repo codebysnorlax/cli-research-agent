@@ -2,17 +2,32 @@ import "dotenv/config";
 import readline from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { tavily } from "@tavily/core";
-import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { StateGraph, StateSchema, START, END } from "@langchain/langgraph";
 import * as z from "zod";
+import { selectModel } from "../src/config/selector.js";
+import { createLLM } from "../src/config/provider.js";
+import { FALLBACK_CHAIN } from "../src/config/models.js";
 
-const geminiApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+// ── Model selection at startup ──────────────────────────────────────
+const selection = await selectModel();
 
-const llm = new ChatGoogleGenerativeAI({
-  model: process.env.GEMINI_MODEL || "gemini-3.6-flash",
-  apiKey: geminiApiKey,
-  temperature: 0,
-});
+let llm;
+let activeModelLabel;
+if (selection.mode === "manual") {
+  llm = createLLM(selection.provider, selection.modelId, {
+    streaming: false,
+    temperature: 0,
+  });
+  activeModelLabel = (selection.label || selection.modelId).replace(/\s*\(.*?\)$/,"").trim();
+} else {
+  const primary = FALLBACK_CHAIN[0];
+  llm = createLLM(primary.provider, primary.modelId, {
+    streaming: false,
+    temperature: 0,
+  });
+  activeModelLabel = primary.modelId.replace(/\s*\(.*?\)$/,"").trim();
+}
+
 const tvly = tavily({ apiKey: process.env.TAVILY_API_KEY });
 
 // Spinner animation frames & status tracking
@@ -146,7 +161,61 @@ function markdownToNotionBlocks(markdown) {
   let codeLanguage = "plain text";
   let codeContent = [];
 
-  for (let i = 0; i < lines.length; i++) {
+  // Helper: detect if a line is a table row (starts & ends with |)
+  function isTableRow(line) {
+    const t = line.trim();
+    return t.startsWith("|") && t.endsWith("|");
+  }
+
+  // Helper: detect separator row like |---|---|
+  function isSeparatorRow(line) {
+    const t = line.trim();
+    return /^\|[\s\-:]+(\|[\s\-:]+)*\|$/.test(t);
+  }
+
+  // Helper: parse a table row into cell strings
+  function parseTableCells(line) {
+    const t = line.trim();
+    // Remove leading and trailing |, then split by |
+    return t
+      .slice(1, -1)
+      .split("|")
+      .map((cell) => cell.trim());
+  }
+
+  // Helper: build a Notion table block from collected rows
+  function buildTableBlock(tableRows) {
+    if (tableRows.length === 0) return null;
+    const columnCount = Math.max(...tableRows.map((r) => r.length));
+
+    const notionRows = tableRows.map((cells, rowIdx) => {
+      // Pad cells if row has fewer columns
+      const paddedCells = [...cells];
+      while (paddedCells.length < columnCount) paddedCells.push("");
+
+      return {
+        object: "block",
+        type: "table_row",
+        table_row: {
+          cells: paddedCells.map((cellText) => parseRichText(cellText)),
+        },
+      };
+    });
+
+    return {
+      object: "block",
+      type: "table",
+      table: {
+        table_width: columnCount,
+        has_column_header: true,
+        has_row_header: false,
+        children: notionRows,
+      },
+    };
+  }
+
+  let i = 0;
+  while (i < lines.length) {
     const line = lines[i];
 
     if (line.trim().startsWith("```")) {
@@ -165,16 +234,36 @@ function markdownToNotionBlocks(markdown) {
         inCodeBlock = true;
         codeLanguage = line.trim().slice(3).trim();
       }
+      i++;
       continue;
     }
 
     if (inCodeBlock) {
       codeContent.push(line);
+      i++;
       continue;
     }
 
     const trimmed = line.trim();
-    if (!trimmed) continue;
+    if (!trimmed) {
+      i++;
+      continue;
+    }
+
+    // ── Table detection ─────────────────────────────────────────────
+    if (isTableRow(trimmed)) {
+      const tableRows = [];
+      // Collect all consecutive table rows
+      while (i < lines.length && isTableRow(lines[i].trim())) {
+        if (!isSeparatorRow(lines[i])) {
+          tableRows.push(parseTableCells(lines[i]));
+        }
+        i++;
+      }
+      const tableBlock = buildTableBlock(tableRows);
+      if (tableBlock) blocks.push(tableBlock);
+      continue;
+    }
 
     // Horizontal Rule / Divider
     if (trimmed === "---" || trimmed === "***" || trimmed === "___") {
@@ -183,6 +272,7 @@ function markdownToNotionBlocks(markdown) {
         type: "divider",
         divider: {},
       });
+      i++;
       continue;
     }
 
@@ -195,6 +285,7 @@ function markdownToNotionBlocks(markdown) {
           rich_text: parseRichText(trimmed.slice(2).trim()),
         },
       });
+      i++;
       continue;
     }
 
@@ -207,6 +298,7 @@ function markdownToNotionBlocks(markdown) {
           rich_text: parseRichText(trimmed.slice(3).trim()),
         },
       });
+      i++;
       continue;
     }
 
@@ -219,6 +311,7 @@ function markdownToNotionBlocks(markdown) {
           rich_text: parseRichText(trimmed.slice(4).trim()),
         },
       });
+      i++;
       continue;
     }
 
@@ -232,6 +325,7 @@ function markdownToNotionBlocks(markdown) {
           rich_text: parseRichText(content),
         },
       });
+      i++;
       continue;
     }
 
@@ -245,6 +339,7 @@ function markdownToNotionBlocks(markdown) {
           rich_text: parseRichText(content),
         },
       });
+      i++;
       continue;
     }
 
@@ -257,6 +352,23 @@ function markdownToNotionBlocks(markdown) {
           rich_text: parseRichText(trimmed.slice(2).trim()),
         },
       });
+      i++;
+      continue;
+    }
+
+    // To-do list (- [ ] or - [x])
+    if (/^-\s+\[([ xX])\]\s+/.test(trimmed)) {
+      const checked = /^-\s+\[[xX]\]/.test(trimmed);
+      const content = trimmed.replace(/^-\s+\[[ xX]\]\s+/, "");
+      blocks.push({
+        object: "block",
+        type: "to_do",
+        to_do: {
+          rich_text: parseRichText(content),
+          checked,
+        },
+      });
+      i++;
       continue;
     }
 
@@ -268,6 +380,7 @@ function markdownToNotionBlocks(markdown) {
         rich_text: parseRichText(trimmed),
       },
     });
+    i++;
   }
 
   if (inCodeBlock && codeContent.length > 0) {
@@ -295,12 +408,20 @@ async function writeNotes(state) {
   const search = await tvly.search(state.topic, { maxResults: 5 });
   const research = JSON.stringify(search.results ?? []);
 
-  setStatus("Generating study notes with Gemini...");
+  setStatus(`Generating notes with ${activeModelLabel}...`);
   const reply = await llm.invoke(
     `Write in-depth study notes on: ${state.topic}\n\nWeb research:\n${research}\n\nUse markdown with headings, bold text, bullet points, quotes, code blocks (if relevant), and dividers.`
   );
 
-  return { notes: reply.content };
+  // Some models return content as an array of blocks instead of a string
+  let notes = reply.content;
+  if (Array.isArray(notes)) {
+    notes = notes
+      .map((block) => (typeof block === "string" ? block : block.text || ""))
+      .join("");
+  }
+
+  return { notes };
 }
 
 async function saveToNotion(state) {
