@@ -138,19 +138,23 @@ function mapLanguage(lang) {
     ts: "typescript",
     py: "python",
     sh: "bash",
-    shell: "bash",
     yml: "yaml",
-    html: "html",
-    css: "css",
-    json: "json",
-    md: "markdown",
-    c: "c",
-    cpp: "cpp",
-    cs: "csharp",
-    java: "java",
-    sql: "sql",
+    cs: "c#",
+    csharp: "c#",
+    cpp: "c++",
+    dockerfile: "docker",
+    react: "javascript",
+    vue: "html",
+    svelte: "html",
   };
-  return aliasMap[l] || (l.length > 0 ? l : "plain text");
+  
+  const mapped = aliasMap[l] || l;
+
+  const validNotionLanguages = new Set([
+    "abap", "abc", "agda", "arduino", "ascii art", "assembly", "bash", "basic", "bnf", "c", "c#", "c++", "clojure", "coffeescript", "coq", "css", "dart", "dhall", "diff", "docker", "ebnf", "elixir", "elm", "erlang", "f#", "flow", "fortran", "gherkin", "glsl", "go", "graphql", "groovy", "haskell", "hcl", "html", "idris", "java", "javascript", "json", "julia", "kotlin", "latex", "less", "lisp", "livescript", "llvm ir", "lua", "makefile", "markdown", "markup", "matlab", "mathematica", "mermaid", "nix", "notion formula", "objective-c", "ocaml", "pascal", "perl", "php", "plain text", "powershell", "prolog", "protobuf", "purescript", "python", "r", "racket", "reason", "ruby", "rust", "sass", "scala", "scheme", "scss", "shell", "smalltalk", "solidity", "sql", "swift", "toml", "typescript", "vb.net", "verilog", "vhdl", "visual basic", "webassembly", "xml", "yaml", "java/c/c++/c#"
+  ]);
+
+  return validNotionLanguages.has(mapped) ? mapped : "plain text";
 }
 
 // Converts full Markdown document to native Notion Block structures
