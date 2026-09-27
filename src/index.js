@@ -90,30 +90,40 @@ function getCleanModelName(providerKey, modelId) {
  */
 async function streamResponse(agent, question, spinner, agentLabel, chatState) {
   let started = false;
+  const controller = new AbortController();
+  let timeoutId = setTimeout(() => controller.abort(new Error("Timeout: Model took too long to respond.")), 15000);
 
-  const result = await agent.stream(
-    { messages: [{ role: "human", content: question }] },
-    { streamMode: "messages", recursionLimit: 6 },
-  );
+  try {
+    const result = await agent.stream(
+      { messages: [{ role: "human", content: question }] },
+      { streamMode: "messages", recursionLimit: 6, signal: controller.signal }
+    );
 
-  for await (const [token] of result) {
-    if (token.type !== "ai") continue;
+    for await (const [token] of result) {
+      // Reset timeout on every token
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => controller.abort(new Error("Timeout: Stream stalled.")), 15000);
 
-    if (token.tool_calls && token.tool_calls.length > 0 && chatState) {
-      const tool = token.tool_calls[0].name;
-      if (tool === "web_search") chatState.text = "Searching on web";
-      if (tool === "visit_page") chatState.text = "Reading webpage";
+      if (token.type !== "ai") continue;
+
+      if (token.tool_calls && token.tool_calls.length > 0 && chatState) {
+        const tool = token.tool_calls[0].name;
+        if (tool === "web_search") chatState.text = "Searching on web";
+        if (tool === "visit_page") chatState.text = "Reading webpage";
+      }
+
+      const content = typeof token.content === "string" ? token.content : "";
+      if (!content) continue;
+
+      if (!started) {
+        clearInterval(spinner);
+        process.stdout.write(`\r\x1b[K${c.bold}${c.cyan}${agentLabel}:${c.reset} `);
+        started = true;
+      }
+      process.stdout.write(content);
     }
-
-    const content = typeof token.content === "string" ? token.content : "";
-    if (!content) continue;
-
-    if (!started) {
-      clearInterval(spinner);
-      process.stdout.write(`\r\x1b[K${c.bold}${c.cyan}${agentLabel}:${c.reset} `);
-      started = true;
-    }
-    process.stdout.write(content);
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   return started;
