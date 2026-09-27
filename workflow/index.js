@@ -531,7 +531,7 @@ while (true) {
     const result = await graph.invoke({ topic });
     clearInterval(spinner);
     const totalTime = formatTimer(Date.now() - startTime);
-    process.stdout.write(`\r\x1b[K✔ Notion page created in ${totalTime}\n`);
+    process.stdout.write(`\r\x1b[K\x1b[32m✔ Notion page created in ${totalTime}\x1b[0m\n`);
     console.log("Notion page:", result.notionUrl, "\n");
   } catch (err) {
     clearInterval(spinner);
