@@ -520,7 +520,7 @@ while (true) {
     const elapsed = Date.now() - startTime;
     const timerStr = formatTimer(elapsed);
     const frame = spinnerFrames[frameIdx++ % spinnerFrames.length];
-    process.stdout.write(`\r${frame} [${timerStr}] ${currentStatus}`);
+    process.stdout.write(`\r\x1b[36m${frame} [${timerStr}] ${currentStatus}\x1b[0m`);
   }, 50);
 
   try {
@@ -532,7 +532,7 @@ while (true) {
   } catch (err) {
     clearInterval(spinner);
     process.stdout.write("\r\x1b[K");
-    console.error("\nWorkflow Error:", err.message || err, "\n");
+    console.error(`\n\x1b[31mWorkflow Error: ${err.message || err}\x1b[0m\n`);
   }
 }
 
