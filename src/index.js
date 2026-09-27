@@ -13,7 +13,7 @@ import { stdin as input, stdout as output } from "node:process";
 import { createAgent } from "langchain";
 import { selectModel } from "./config/selector.js";
 import { createLLM } from "./config/provider.js";
-import { FALLBACK_CHAIN } from "./config/models.js";
+import { FALLBACK_CHAIN, PROVIDERS } from "./config/models.js";
 import { visitPage, webSearch } from "./tools/index.js";
 
 // ── Colours ─────────────────────────────────────────────────────────
@@ -71,6 +71,16 @@ function buildAgent(provider, modelId) {
 }
 
 /**
+ * Lookup the human-readable model name from the registry, stripping tags.
+ */
+function getCleanModelName(providerKey, modelId) {
+  const provider = PROVIDERS[providerKey];
+  if (!provider) return modelId;
+  const model = provider.models.find((m) => m.id === modelId);
+  return model ? model.label.replace(/\s*\(Free\)|\s*\(Paid\)/gi, "").trim() : modelId;
+}
+
+/**
  * Stream a response from the given agent, writing tokens to stdout.
  * Returns true if output was produced, false otherwise.
  */
@@ -113,7 +123,7 @@ if (selection.mode === "manual") {
   // ── Auto: primary = first in fallback chain ─────────────────────
   const primary = FALLBACK_CHAIN[0];
   primaryAgent = buildAgent(primary.provider, primary.modelId);
-  activeLabel = `${primary.modelId} (auto)`;
+  activeLabel = `${getCleanModelName(primary.provider, primary.modelId)} (auto)`;
 }
 
 const rl = readline.createInterface({ input, output });
@@ -139,7 +149,7 @@ while (true) {
     } else {
       const primary = FALLBACK_CHAIN[0];
       primaryAgent = buildAgent(primary.provider, primary.modelId);
-      activeLabel = `${primary.modelId} (auto)`;
+      activeLabel = `${getCleanModelName(primary.provider, primary.modelId)} (auto)`;
     }
     // re-open rl
     const newRl = readline.createInterface({ input, output });
@@ -181,7 +191,7 @@ while (true) {
 
       for (let i = 1; i < FALLBACK_CHAIN.length; i++) {
         const fb = FALLBACK_CHAIN[i];
-        const fallbackLabel = fb.modelId;
+        const fallbackLabel = getCleanModelName(fb.provider, fb.modelId);
         console.log(
           `${c.dim}  → Attempting ${fallbackLabel}…${c.reset}`
         );
