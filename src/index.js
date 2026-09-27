@@ -29,9 +29,13 @@ const c = {
 
 const spinnerFrames = ["⢿", "⣻", "⣽", "⣾", "⣷", "⣯", "⣟", "⡿"];
 
-const SYSTEM_PROMPT =
-  "You are a helpful assistant. Answer clearly and keep replies short. You also have visit_page for urls, web_search for general search.";
-
+function getSystemPrompt() {
+  const now = new Date().toLocaleString(undefined, { 
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    hour: 'numeric', minute: 'numeric', second: 'numeric', timeZoneName: 'short'
+  });
+  return `You are a helpful assistant. Answer clearly and keep replies short. You also have visit_page for urls, web_search for general search.\n\nCurrent Date and Time: ${now}`;
+}
 // ── Helpers ─────────────────────────────────────────────────────────
 
 /**
@@ -66,7 +70,7 @@ function buildAgent(provider, modelId) {
   return createAgent({
     model: llm,
     tools: [webSearch, visitPage],
-    systemPrompt: SYSTEM_PROMPT,
+    systemPrompt: getSystemPrompt(),
   });
 }
 
