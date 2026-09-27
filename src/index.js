@@ -84,7 +84,7 @@ function getCleanModelName(providerKey, modelId) {
  * Stream a response from the given agent, writing tokens to stdout.
  * Returns true if output was produced, false otherwise.
  */
-async function streamResponse(agent, question, spinner, agentLabel) {
+async function streamResponse(agent, question, spinner, agentLabel, chatState) {
   let started = false;
 
   const result = await agent.stream(
@@ -94,6 +94,13 @@ async function streamResponse(agent, question, spinner, agentLabel) {
 
   for await (const [token] of result) {
     if (token.type !== "ai") continue;
+
+    if (token.tool_calls && token.tool_calls.length > 0 && chatState) {
+      const tool = token.tool_calls[0].name;
+      if (tool === "web_search") chatState.text = "Searching on web";
+      if (tool === "visit_page") chatState.text = "Reading webpage";
+    }
+
     const content = typeof token.content === "string" ? token.content : "";
     if (!content) continue;
 
@@ -164,13 +171,14 @@ while (true) {
   // ── Normal chat turn ──────────────────────────────────────────
   let frameIdx = 0;
   let startTime = Date.now();
+  let chatState = { text: "Thinking" };
   let spinner = setInterval(() => {
     const elapsed = formatTimer(Date.now() - startTime);
     const frame = spinnerFrames[frameIdx % spinnerFrames.length];
     // Slower dots: change every 5 frames (~400ms)
     const dots = ".".repeat(1 + (Math.floor(frameIdx / 5) % 3));
     process.stdout.write(
-      `\r\x1b[K${c.cyan}${frame} [${elapsed}] Thinking${dots}${c.reset}`
+      `\r\x1b[K${c.cyan}${frame} [${elapsed}] ${chatState.text}${dots}${c.reset}`
     );
     frameIdx++;
   }, 80);
@@ -178,7 +186,7 @@ while (true) {
   let responded = false;
 
   try {
-    responded = await streamResponse(primaryAgent, question, spinner, activeLabel);
+    responded = await streamResponse(primaryAgent, question, spinner, activeLabel, chatState);
   } catch (err) {
     clearInterval(spinner);
     process.stdout.write("\r\x1b[K");
@@ -199,6 +207,7 @@ while (true) {
         try {
           const fallbackAgent = buildAgent(fb.provider, fb.modelId);
 
+          let fbChatState = { text: `Thinking (${fallbackLabel})` };
           frameIdx = 0;
           startTime = Date.now();
           spinner = setInterval(() => {
@@ -207,12 +216,12 @@ while (true) {
             // Slower dots: change every 5 frames (~400ms)
             const dots = ".".repeat(1 + (Math.floor(frameIdx / 5) % 3));
             process.stdout.write(
-              `\r\x1b[K${c.cyan}${frame} [${elapsed}] Thinking (${fallbackLabel})${dots}${c.reset}`
+              `\r\x1b[K${c.cyan}${frame} [${elapsed}] ${fbChatState.text}${dots}${c.reset}`
             );
             frameIdx++;
           }, 80);
 
-          responded = await streamResponse(fallbackAgent, question, spinner, fallbackLabel);
+          responded = await streamResponse(fallbackAgent, question, spinner, fallbackLabel, fbChatState);
 
           if (responded) {
             // Promote this fallback as the new primary for the session
