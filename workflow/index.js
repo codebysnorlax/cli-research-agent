@@ -52,7 +52,7 @@ function parseRichText(text) {
   if (!text) return [{ type: "text", text: { content: "" } }];
 
   const tokens = [];
-  const regex = /(\*\*(.*?)\*\*|\*(.*?)\*|_(.*?)_|`(.*?)`|\[(.*?)\]\((.*?)\))/g;
+  const regex = /(\*\*(.*?)\*\*|\*(.*?)\*|_(.*?)_|`(.*?)`|\[(.*?)\]\((.*?)\)|\$\$(.*?)\$\$|\$([^\$]+?)\$)/g;
   let lastIndex = 0;
   let match;
 
@@ -95,6 +95,12 @@ function parseRichText(text) {
           link: match[7] ? { url: match[7] } : null,
         },
       });
+    } else if (fullMatch.startsWith("$$") || fullMatch.startsWith("$")) {
+      const expression = match[8] || match[9] || "";
+      tokens.push({
+        type: "equation",
+        equation: { expression: expression.trim() },
+      });
     }
 
     lastIndex = regex.lastIndex;
@@ -112,7 +118,14 @@ function parseRichText(text) {
   // Ensure content per token <= 2000 chars (Notion limit)
   const sanitizedTokens = [];
   for (const token of tokens) {
-    const content = token.text.content || "";
+    if (token.type === "equation") {
+      let expr = token.equation.expression || "";
+      if (expr.length > 1000) expr = expr.slice(0, 1000);
+      sanitizedTokens.push({ type: "equation", equation: { expression: expr } });
+      continue;
+    }
+
+    const content = token.text?.content || "";
     if (content.length <= 2000) {
       sanitizedTokens.push(token);
     } else {
@@ -128,7 +141,8 @@ function parseRichText(text) {
     }
   }
 
-  return sanitizedTokens;
+  // A single rich_text array can have a maximum of 100 objects
+  return sanitizedTokens.slice(0, 100);
 }
 
 function mapLanguage(lang) {
@@ -164,6 +178,8 @@ function markdownToNotionBlocks(markdown) {
   let inCodeBlock = false;
   let codeLanguage = "plain text";
   let codeContent = [];
+  let inMathBlock = false;
+  let mathContent = [];
 
   // Helper: detect if a line is a table row (starts & ends with |)
   function isTableRow(line) {
@@ -224,14 +240,18 @@ function markdownToNotionBlocks(markdown) {
 
     if (line.trim().startsWith("```")) {
       if (inCodeBlock) {
-        blocks.push({
-          object: "block",
-          type: "code",
-          code: {
-            rich_text: parseRichText(codeContent.join("\n")),
-            language: mapLanguage(codeLanguage),
-          },
-        });
+        const fullCode = codeContent.join("\n");
+        // Notion has a 2000 character limit for rich_text content in a code block
+        for (let j = 0; j < fullCode.length; j += 2000) {
+          blocks.push({
+            object: "block",
+            type: "code",
+            code: {
+              rich_text: parseRichText(fullCode.slice(j, j + 2000)),
+              language: mapLanguage(codeLanguage),
+            },
+          });
+        }
         inCodeBlock = false;
         codeContent = [];
       } else {
@@ -244,6 +264,30 @@ function markdownToNotionBlocks(markdown) {
 
     if (inCodeBlock) {
       codeContent.push(line);
+      i++;
+      continue;
+    }
+
+    if (line.trim() === "$$") {
+      if (inMathBlock) {
+        let fullMath = mathContent.join("\n");
+        if (fullMath.length > 1000) fullMath = fullMath.slice(0, 1000);
+        blocks.push({
+          object: "block",
+          type: "equation",
+          equation: { expression: fullMath },
+        });
+        inMathBlock = false;
+        mathContent = [];
+      } else {
+        inMathBlock = true;
+      }
+      i++;
+      continue;
+    }
+
+    if (inMathBlock) {
+      mathContent.push(line);
       i++;
       continue;
     }
@@ -306,13 +350,14 @@ function markdownToNotionBlocks(markdown) {
       continue;
     }
 
-    // Heading 3 (### Heading)
-    if (trimmed.startsWith("### ")) {
+    // Heading 3, 4, 5, 6 mapped to heading_3
+    const h3Match = trimmed.match(/^(#{3,6})\s+(.*)/);
+    if (h3Match) {
       blocks.push({
         object: "block",
         type: "heading_3",
         heading_3: {
-          rich_text: parseRichText(trimmed.slice(4).trim()),
+          rich_text: parseRichText(h3Match[2].trim()),
         },
       });
       i++;
@@ -388,13 +433,26 @@ function markdownToNotionBlocks(markdown) {
   }
 
   if (inCodeBlock && codeContent.length > 0) {
+    const fullCode = codeContent.join("\n");
+    for (let j = 0; j < fullCode.length; j += 2000) {
+      blocks.push({
+        object: "block",
+        type: "code",
+        code: {
+          rich_text: parseRichText(fullCode.slice(j, j + 2000)),
+          language: mapLanguage(codeLanguage),
+        },
+      });
+    }
+  }
+
+  if (inMathBlock && mathContent.length > 0) {
+    let fullMath = mathContent.join("\n");
+    if (fullMath.length > 1000) fullMath = fullMath.slice(0, 1000);
     blocks.push({
       object: "block",
-      type: "code",
-      code: {
-        rich_text: parseRichText(codeContent.join("\n")),
-        language: mapLanguage(codeLanguage),
-      },
+      type: "equation",
+      equation: { expression: fullMath },
     });
   }
 

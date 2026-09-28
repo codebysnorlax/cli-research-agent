@@ -16,6 +16,10 @@ import { createLLM } from "./config/provider.js";
 import { FALLBACK_CHAIN, PROVIDERS } from "./config/models.js";
 import { visitPage, webSearch } from "./tools/index.js";
 
+// Prevent background network/stream errors from crashing the CLI
+process.on("unhandledRejection", (err) => {
+  // Ignored to keep the CLI alive; primary errors are caught in the main loop.
+});
 // ── Colours ─────────────────────────────────────────────────────────
 const c = {
   reset: "\x1b[0m",
@@ -34,18 +38,18 @@ function getSystemPrompt() {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
     hour: 'numeric', minute: 'numeric', second: 'numeric', timeZoneName: 'short'
   });
-  return `You are a helpful assistant. Answer clearly and keep replies short. You also have visit_page for urls, web_search for general search.\n\nCurrent Date and Time: ${now}`;
+  return `You are a helpful assistant. Answer clearly and keep replies short. You also have visit_page for urls, web_search for general search. Once a tool returns sufficient information, you MUST stop and provide the final answer immediately. Do not endlessly call tools.\n\nCurrent Date and Time: ${now}`;
 }
 // ── Helpers ─────────────────────────────────────────────────────────
 
 /**
- * Format elapsed milliseconds as m:ss.ms (e.g. 1:05.32)
+ * Format elapsed milliseconds as mm-ss-ms
  */
 function formatTimer(elapsedMs) {
   const mins = Math.floor(elapsedMs / 60000);
   const secs = Math.floor((elapsedMs % 60000) / 1000);
   const ms = Math.floor((elapsedMs % 1000) / 10);
-  return `${mins}:${String(secs).padStart(2, "0")}.${String(ms).padStart(2, "0")}`;
+  return `${String(mins).padStart(2, "0")}-${String(secs).padStart(2, "0")}-${String(ms).padStart(2, "0")}`;
 }
 
 /**
@@ -98,7 +102,7 @@ async function streamResponse(agent, question, spinner, agentLabel, chatState) {
   try {
     const result = await agent.stream(
       { messages: [{ role: "human", content: question }] },
-      { streamMode: "messages", recursionLimit: 6, signal: controller.signal }
+      { streamMode: "messages", recursionLimit: 15, signal: controller.signal }
     );
 
     for await (const [token] of result) {
@@ -196,10 +200,8 @@ while (true) {
   let spinner = setInterval(() => {
     const elapsed = formatTimer(Date.now() - startTime);
     const frame = spinnerFrames[frameIdx % spinnerFrames.length];
-    // Slower dots: change every 5 frames (~400ms)
-    const dots = ".".repeat(1 + (Math.floor(frameIdx / 5) % 3));
     process.stdout.write(
-      `\r\x1b[K${c.cyan}${frame} [${elapsed}] ${chatState.text}${dots}${c.reset}`
+      `\r\x1b[K${c.cyan}${frame} ${chatState.text} for (${elapsed})${c.reset}`
     );
     frameIdx++;
   }, 80);
@@ -234,10 +236,8 @@ while (true) {
           spinner = setInterval(() => {
             const elapsed = formatTimer(Date.now() - startTime);
             const frame = spinnerFrames[frameIdx % spinnerFrames.length];
-            // Slower dots: change every 5 frames (~400ms)
-            const dots = ".".repeat(1 + (Math.floor(frameIdx / 5) % 3));
             process.stdout.write(
-              `\r\x1b[K${c.cyan}${frame} [${elapsed}] ${fbChatState.text}${dots}${c.reset}`
+              `\r\x1b[K${c.cyan}${frame} ${fbChatState.text} for (${elapsed})${c.reset}`
             );
             frameIdx++;
           }, 80);
@@ -277,9 +277,13 @@ while (true) {
         console.log(
           `\n${c.yellow}Quota exceeded.${c.reset} Type ${c.bold}"switch"${c.reset} to change model.\n`
         );
+      } else if (message.includes("Recursion limit")) {
+        console.log(
+          `${c.yellow}Agent stopped: The task took too many steps or got stuck in a loop.${c.reset}\n`
+        );
       } else {
         console.log(
-          `${c.dim}Check your API keys in .env${c.reset}\n`
+          `${c.dim}Please verify your request or configuration.${c.reset}\n`
         );
       }
       continue;
