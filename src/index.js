@@ -15,6 +15,7 @@ import { selectModel } from "./config/selector.js";
 import { createLLM } from "./config/provider.js";
 import { FALLBACK_CHAIN, PROVIDERS } from "./config/models.js";
 import { visitPage, webSearch } from "./tools/index.js";
+import { renderMarkdown } from "./utils/terminalMarkdown.js";
 
 // Prevent background network/stream errors from crashing the CLI
 process.on("unhandledRejection", (err) => {
@@ -95,6 +96,7 @@ function getCleanModelName(providerKey, modelId) {
 async function streamResponse(agent, question, spinner, agentLabel, chatState) {
   let started = false;
   const controller = new AbortController();
+  let responseBuffer = "";
   
   // Allow 60s initially for the model to think or establish a connection
   let timeoutId = setTimeout(() => controller.abort(new Error("Timeout: Model took too long to start.")), 60000);
@@ -123,18 +125,37 @@ async function streamResponse(agent, question, spinner, agentLabel, chatState) {
 
       if (token.type !== "ai") continue;
 
-      const content = typeof token.content === "string" ? token.content : "";
+      // Handle content as string or as array of content parts (some models return [{type: "text", text: "..."}])
+      let content = "";
+      if (typeof token.content === "string") {
+        content = token.content;
+      } else if (Array.isArray(token.content)) {
+        content = token.content
+          .filter((p) => p.type === "text" || typeof p === "string")
+          .map((p) => (typeof p === "string" ? p : p.text || ""))
+          .join("");
+      }
       if (!content) continue;
 
       if (!started) {
-        clearInterval(spinner);
-        process.stdout.write(`\r\x1b[K${c.bold}${c.cyan}${agentLabel}:${c.reset} `);
+        // Don't kill spinner — switch its message to show we're receiving data
+        if (chatState) chatState.text = "Receiving";
         started = true;
       }
-      process.stdout.write(content);
+      // Buffer the streamed content instead of writing raw
+      responseBuffer += content;
     }
   } finally {
     clearTimeout(timeoutId);
+  }
+
+  // Render the complete markdown response with formatting
+  if (started && responseBuffer.trim()) {
+    clearInterval(spinner);
+    process.stdout.write(`\r\x1b[K`);
+    console.log(`${c.bold}${c.cyan}${agentLabel}:${c.reset}`);
+    const rendered = renderMarkdown(responseBuffer);
+    console.log(rendered);
   }
 
   return started;
@@ -196,7 +217,7 @@ while (true) {
   // ── Normal chat turn ──────────────────────────────────────────
   let frameIdx = 0;
   let startTime = Date.now();
-  let chatState = { text: "Thinking" };
+  let chatState = { text: "Gooning" };
   let spinner = setInterval(() => {
     const elapsed = formatTimer(Date.now() - startTime);
     const frame = spinnerFrames[frameIdx % spinnerFrames.length];
