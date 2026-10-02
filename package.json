@@ -7,21 +7,12 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
-    "notion": "node workflow/index.js",
-    "workflow": "node workflow/index.js"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Aestheticsuraj234/langchain_langgraph.git"
+    "notion": "node notion/index.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "module",
-  "bugs": {
-    "url": "https://github.com/Aestheticsuraj234/langchain_langgraph/issues"
-  },
-  "homepage": "https://github.com/Aestheticsuraj234/langchain_langgraph#readme",
   "dependencies": {
     "@langchain/core": "^1.2.12",
     "@langchain/google-genai": "^2.3.2",
