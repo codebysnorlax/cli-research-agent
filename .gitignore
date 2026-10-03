@@ -82,3 +82,12 @@ Thumbs.db
 .env.test.local
 .env.production.local
 *.env*.zip
+
+# Email agent — credentials & data (NEVER commit these!)
+credentials/
+!credentials/.gitkeep
+data/
+!data/.gitkeep
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal

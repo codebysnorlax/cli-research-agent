@@ -1,13 +1,14 @@
 {
   "name": "langchain_langgraph",
-  "version": "1.0.0",
-  "description": "",
+  "version": "1.2.0",
+  "description": "AI-powered CLI agents — research, Notion workflow, and email automation with LangGraph, LangChain, and Gmail API",
   "main": "src/index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
-    "notion": "node notion/index.js"
+    "notion": "node notion/index.js",
+    "email": "node email/index.js"
   },
   "keywords": [],
   "author": "",
