@@ -6,29 +6,22 @@
 
 ## 1. LangGraph's Responsibility
 
-```
-START
- ↓
-Understand user request
- ↓
-Search / Read if needed
- ↓
-Research if needed
- ↓
-Draft email
- ↓
-Human action decision
- ├── Send
- ├── Reject
- └── Schedule
-        ↓
-    Parse datetime
-        ↓
-    Human confirmation
-        ↓
-    Persist job to SQLite
-        ↓
-       END
+```mermaid
+flowchart TD
+    START["START"] --> UNDERSTAND["Understand user request"]
+    UNDERSTAND --> SEARCH["Search / Read if needed"]
+    SEARCH --> RESEARCH["Research if needed"]
+    RESEARCH --> DRAFT["Draft email"]
+    DRAFT --> ACTION["Human action decision"]
+    
+    ACTION --> SEND["Send"]
+    ACTION --> REJECT["Reject"]
+    ACTION --> SCHEDULE["Schedule"]
+    
+    SCHEDULE --> PARSE["Parse datetime"]
+    PARSE --> CONFIRM["Human confirmation"]
+    CONFIRM --> PERSIST["Persist job to SQLite"]
+    PERSIST --> END_NODE["END"]
 ```
 
 LangGraph handles the **interactive reasoning** workflow. Once a job is persisted to SQLite, LangGraph's involvement is **done**.
@@ -72,56 +65,30 @@ Infrastructure (GmailService, SQLite, etc.)
 
 ## 3. Graph Structure
 
-```
-                    ┌──────────┐
-                    │  START   │
-                    └────┬─────┘
-                         │
-                         ▼
-                 ┌───────────────┐
-                 │  AGENT NODE   │
-                 │ (understand)  │
-                 └───────┬───────┘
-                         │
-              ┌──────────┼──────────┐
-              │          │          │
-              ▼          ▼          ▼
-         ┌─────────┐ ┌────────┐ ┌──────────┐
-         │ SEARCH  │ │  READ  │ │ RESEARCH │
-         │  node   │ │  node  │ │   node   │
-         └────┬────┘ └───┬────┘ └────┬─────┘
-              │          │          │
-              └──────────┼──────────┘
-                         │
-                         ▼
-                 ┌───────────────┐
-                 │ DRAFTING NODE │
-                 │ (compose)     │
-                 └───────┬───────┘
-                         │
-                         ▼
-                 ┌───────────────┐
-                 │ APPROVAL NODE │
-                 │ (human-in-    │
-                 │  the-loop)    │
-                 └───────┬───────┘
-                         │
-              ┌──────────┼──────────┐
-              │          │          │
-              ▼          ▼          ▼
-           [SEND]    [REJECT]   [SCHEDULE]
-              │          │          │
-              ▼          ▼          ▼
-          ┌────────┐ ┌────────┐ ┌──────────────┐
-          │PERSIST │ │  END   │ │ SCHEDULE     │
-          │ + SEND │ │        │ │ CONFIRM NODE │
-          └───┬────┘ └────────┘ └──────┬───────┘
-              │                        │
-              ▼                        ▼
-          ┌────────┐              ┌─────────┐
-          │  END   │              │ PERSIST │
-          └────────┘              │ + END   │
-                                  └─────────┘
+```mermaid
+flowchart TD
+    START["START"] --> AGENT["AGENT NODE<br>(understand)"]
+    
+    AGENT --> SEARCH["SEARCH<br>node"]
+    AGENT --> READ["READ<br>node"]
+    AGENT --> RESEARCH["RESEARCH<br>node"]
+    
+    SEARCH --> DRAFTING["DRAFTING NODE<br>(compose)"]
+    READ --> DRAFTING
+    RESEARCH --> DRAFTING
+    
+    DRAFTING --> APPROVAL["APPROVAL NODE<br>(human-in-the-loop)"]
+    
+    APPROVAL --> SEND["[SEND]"]
+    APPROVAL --> REJECT["[REJECT]"]
+    APPROVAL --> SCHEDULE["[SCHEDULE]"]
+    
+    SEND --> PERSIST_SEND["PERSIST<br>+ SEND"]
+    REJECT --> END_REJECT["END"]
+    SCHEDULE --> SCHEDULE_CONFIRM["SCHEDULE<br>CONFIRM NODE"]
+    
+    PERSIST_SEND --> END_SEND["END"]
+    SCHEDULE_CONFIRM --> PERSIST_END["PERSIST<br>+ END"]
 ```
 
 ---

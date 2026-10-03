@@ -9,47 +9,32 @@
 
 Every email job follows a deterministic state machine. No state transition happens without an explicit trigger.
 
-```
-                     ┌───────────┐
-                     │   DRAFT   │
-                     └─────┬─────┘
-                           │
-                           ▼
-                  AWAITING_APPROVAL
-                    │           │
-                  reject       approve
-                    │           │
-                    ▼           ▼
-                REJECTED      APPROVED
-                                  │
-                         ┌────────┴────────┐
-                         │                 │
-                       SEND             SCHEDULE
-                         │                 │
-                         ▼                 ▼
-                     PROCESSING        SCHEDULED
-                         │                 │
-                         │                 │
-                         │             due time
-                         │                 │
-                         │                 ▼
-                         │             PROCESSING
-                         │                 │
-                         └────────┬────────┘
-                                  │
-                         ┌────────┴────────┐
-                         ▼                 ▼
-                       SENT              FAILED
+```mermaid
+flowchart TD
+    DRAFT["DRAFT"] --> AWAITING["AWAITING_APPROVAL"]
+    
+    AWAITING -->|reject| REJECTED["REJECTED"]
+    AWAITING -->|approve| APPROVED["APPROVED"]
+    
+    APPROVED --> SEND["SEND"]
+    APPROVED --> SCHEDULE["SCHEDULE"]
+    
+    SEND --> PROCESSING["PROCESSING"]
+    SCHEDULE --> SCHEDULED["SCHEDULED"]
+    
+    SCHEDULED -->|due time| PROCESSING
+    
+    PROCESSING --> SENT["SENT"]
+    PROCESSING --> FAILED["FAILED"]
 ```
 
 ### Scheduled-Specific Transitions
 
-```
-SCHEDULED
-    │
-    ├── too late       → EXPIRED
-    ├── cancelled      → CANCELLED
-    └── rescheduled    → SCHEDULED (new datetime)
+```mermaid
+flowchart LR
+    SCHEDULED["SCHEDULED"] -->|too late| EXPIRED["EXPIRED"]
+    SCHEDULED -->|cancelled| CANCELLED["CANCELLED"]
+    SCHEDULED -->|rescheduled| SCHEDULED_NEW["SCHEDULED (new datetime)"]
 ```
 
 ---

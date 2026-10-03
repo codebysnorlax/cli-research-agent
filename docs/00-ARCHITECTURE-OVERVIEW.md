@@ -22,77 +22,37 @@ The model can **propose** actions. The **application** decides whether those act
 
 ## 2. High-Level Architecture
 
-```
-                         ┌─────────────────────┐
-                         │       USER          │
-                         │   Terminal / CLI    │
-                         └──────────┬──────────┘
-                                    │
-                                    ▼
-                         ┌─────────────────────┐
-                         │    EMAIL AGENT      │
-                         │     LangGraph       │
-                         └──────────┬──────────┘
-                                    │
-                    ┌───────────────┼────────────────┐
-                    │               │                │
-                    ▼               ▼                ▼
-              Email Search      Email Read      Email Research
-                    │               │                │
-                    └───────────────┼────────────────┘
-                                    │
-                                    ▼
-                           ┌────────────────┐
-                           │ EMAIL DRAFTING │
-                           │      LLM       │
-                           └───────┬────────┘
-                                   │
-                                   ▼
-                         ┌─────────────────────┐
-                         │ FINAL EMAIL DISPLAY │
-                         └──────────┬──────────┘
-                                    │
-                       ┌────────────┼─────────────┐
-                       │            │             │
-                     SEND         REJECT       SCHEDULE
-                       │                          │
-                       │                          ▼
-                       │                  Natural-language
-                       │                  date/time parser
-                       │                          │
-                       │                          ▼
-                       │                  Exact datetime
-                       │                          │
-                       │                          ▼
-                       │                    Human approval
-                       │                          │
-                       │                         YES
-                       │                          │
-                       ▼                          ▼
-                ┌─────────────────────────────────────┐
-                │           EMAIL JOB SYSTEM           │
-                │              SQLite                  │
-                └──────────────────┬──────────────────┘
-                                   │
-                                   ▼
-                            Scheduler Worker
-                                   │
-                              due job?
-                                   │
-                                   ▼
-                          Atomic job claiming
-                                   │
-                                   ▼
-                            PROCESSING
-                                   │
-                                   ▼
-                           Gmail Service
-                                   │
-                                   ▼
-                            Gmail API
-                                   │
-                                   ▼
-                              SENT / FAILED
+```mermaid
+flowchart TD
+    USER["USER<br>Terminal / CLI"] --> AGENT["EMAIL AGENT<br>LangGraph"]
+    
+    AGENT --> SEARCH["Email Search"]
+    AGENT --> READ["Email Read"]
+    AGENT --> RESEARCH["Email Research"]
+    
+    SEARCH --> DRAFTING["EMAIL DRAFTING<br>LLM"]
+    READ --> DRAFTING
+    RESEARCH --> DRAFTING
+    
+    DRAFTING --> DISPLAY["FINAL EMAIL DISPLAY"]
+    
+    DISPLAY --> SEND["SEND"]
+    DISPLAY --> REJECT["REJECT"]
+    DISPLAY --> SCHEDULE["SCHEDULE"]
+    
+    SCHEDULE --> NL["Natural-language<br>date/time parser"]
+    NL --> EXACT["Exact datetime"]
+    EXACT --> APPROVAL["Human approval"]
+    APPROVAL -->|YES| JOB
+    
+    SEND --> JOB["EMAIL JOB SYSTEM<br>SQLite"]
+    
+    JOB --> WORKER["Scheduler Worker"]
+    WORKER -->|due job?| CLAIM["Atomic job claiming"]
+    CLAIM --> PROCESSING["PROCESSING"]
+    PROCESSING --> SERVICE["Gmail Service"]
+    SERVICE --> API["Gmail API"]
+    API --> RESULT["SENT / FAILED"]
 ```
 
 ---
@@ -101,36 +61,12 @@ The model can **propose** actions. The **application** decides whether those act
 
 Everything else is secondary. These are the heart of the system:
 
-```
-              ┌─────────────────┐
-              │      LLM        │
-              │ understand/draft│
-              └────────┬────────┘
-                       │
-                       ▼
-              ┌─────────────────┐
-              │ APPROVAL GATE   │
-              │ human authority │
-              └────────┬────────┘
-                       │
-                       ▼
-              ┌─────────────────┐
-              │ STATE MACHINE   │
-              │ lifecycle       │
-              └────────┬────────┘
-                       │
-                       ▼
-              ┌─────────────────┐
-              │     SQLITE      │
-              │ source of truth │
-              └────────┬────────┘
-                       │
-                       ▼
-              ┌─────────────────┐
-              │ GMAIL EXECUTOR  │
-              │ external side   │
-              │ effect          │
-              └─────────────────┘
+```mermaid
+flowchart TD
+    LLM["LLM<br>understand/draft"] --> GATE["APPROVAL GATE<br>human authority"]
+    GATE --> SM["STATE MACHINE<br>lifecycle"]
+    SM --> SQLITE["SQLITE<br>source of truth"]
+    SQLITE --> EXECUTOR["GMAIL EXECUTOR<br>external side effect"]
 ```
 
 **Not** LangChain. **Not** Gemini. **Not** the CLI. **Not** Gmail.  
@@ -140,26 +76,21 @@ The combination of **State Machine + Persistent Jobs + Approval Boundary + Deter
 
 ## 4. Separation of Concerns
 
-```
-LangGraph
-    ↓
-Email Tools (abstraction)
-    ↓
-Gmail Service (isolation layer)
-    ↓
-googleapis (client library)
-    ↓
-Gmail API (external)
+```mermaid
+flowchart TD
+    GRAPH["LangGraph"] --> TOOLS["Email Tools (abstraction)"]
+    TOOLS --> SERVICE["Gmail Service (isolation layer)"]
+    SERVICE --> API["googleapis (client library)"]
+    API --> GMAIL["Gmail API (external)"]
 ```
 
 The graph never knows how Gmail HTTP requests work. If Gmail is later replaced with Outlook, the agent doesn't change:
 
-```
-Email Agent
-     ↓
-Email Service Interface
-     ├── Gmail
-     └── Outlook (future)
+```mermaid
+flowchart TD
+    AGENT["Email Agent"] --> IFACE["Email Service Interface"]
+    IFACE --> GMAIL["Gmail"]
+    IFACE --> OUTLOOK["Outlook (future)"]
 ```
 
 ---
